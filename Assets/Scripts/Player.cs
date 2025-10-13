@@ -1,11 +1,10 @@
 using System;
-using Unity.Burst.Intrinsics;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.SceneManagement;
 
 public class player : MonoBehaviour
 {
-
     public Text CoinText;
     public int currentCoin = 0;
     public int maxHealth = 3;
@@ -26,25 +25,70 @@ public class player : MonoBehaviour
 
     void Start()
     {
-        rb = this.GetComponent<Rigidbody2D>();
-        animator = this.GetComponent<Animator>();
+        // Evitar duplicados de jugador entre escenas
+        var players = FindObjectsOfType<player>();
+        if (players.Length > 1)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        // Hacer que el jugador no se destruya al cambiar de nivel
+        DontDestroyOnLoad(gameObject);
+
+        rb = GetComponent<Rigidbody2D>();
+        animator = GetComponent<Animator>();
+
+        // Intentar reasignar los textos por nombre si no están puestos
+        if (CoinText == null)
+            CoinText = GameObject.Find("CoinText")?.GetComponent<Text>();
+
+        if (health == null)
+            health = GameObject.Find("HealthText")?.GetComponent<Text>();
+    }
+
+    void OnEnable()
+    {
+        // Escuchar cuando se cargue una nueva escena
+        SceneManager.sceneLoaded += OnSceneLoaded;
+    }
+
+    void OnDisable()
+    {
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+    }
+
+    // Cuando se carga una nueva escena, colocar al jugador en el SpawnPoint
+    void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        GameObject spawn = GameObject.Find("SpawnPoint");
+        if (spawn != null)
+        {
+            transform.position = spawn.transform.position;
+        }
+
+        // Reasignar los textos del nuevo Canvas
+        CoinText = GameObject.Find("CoinText")?.GetComponent<Text>();
+        health = GameObject.Find("HealthText")?.GetComponent<Text>();
     }
 
     void Update()
     {
-
         if (maxHealth <= 0)
         {
-
             Die();
         }
 
-        CoinText.text = currentCoin.ToString();
+        // Evitar errores si los textos aún no se han reasignado
+        if (CoinText != null)
+            CoinText.text = currentCoin.ToString();
 
-        health.text = maxHealth.ToString();
+        if (health != null)
+            health.text = maxHealth.ToString();
 
         movement = Input.GetAxis("Horizontal");
         transform.position += new Vector3(movement, 0f, 0f) * moveSpeed * Time.deltaTime;
+
         if (Input.GetKey(KeyCode.Space) && isGround)
         {
             Jump();
@@ -72,7 +116,7 @@ public class player : MonoBehaviour
         {
             animator.SetFloat("Run", 1f);
         }
-        else if (movement < 0.1f)
+        else
         {
             animator.SetFloat("Run", 0f);
         }
@@ -80,7 +124,6 @@ public class player : MonoBehaviour
 
     void Jump()
     {
-
         Vector2 vel = rb.velocity;
         vel.y = jumpHeight;
         rb.velocity = vel;
@@ -88,7 +131,7 @@ public class player : MonoBehaviour
 
     private void OnCollisionEnter2D(Collision2D other)
     {
-        if (other.collider.tag == "Ground")
+        if (other.collider.CompareTag("Ground"))
         {
             isGround = true;
             animator.SetBool("Jump", false);
@@ -100,44 +143,42 @@ public class player : MonoBehaviour
         Collider2D collInfo = Physics2D.OverlapCircle(attackPoint.position, attackRadius, attackLayer);
         if (collInfo)
         {
-            if (collInfo.gameObject.GetComponent<PatrolEnemy>() != null)
+            PatrolEnemy enemy = collInfo.gameObject.GetComponent<PatrolEnemy>();
+            if (enemy != null)
             {
-                collInfo.gameObject.GetComponent<PatrolEnemy>().TakeDamege(1);
+                enemy.TakeDamege(1);
             }
         }
     }
 
     void OnDrawGizmosSelected()
     {
-        if (attackPoint == null)
+        if (attackPoint != null)
         {
-            return;
+            Gizmos.DrawWireSphere(attackPoint.position, attackRadius);
         }
-        Gizmos.DrawWireSphere(attackPoint.position, attackRadius);
     }
 
     public void TakeDamage(int damage)
     {
         if (maxHealth <= 0)
-        {
             return;
-        }
+
         maxHealth -= damage;
-        //CamaraShake.instance.Shake(0.12f, 2.8f);
     }
 
     void OnTriggerEnter2D(Collider2D other)
     {
-        if (other.gameObject.tag == "Coin")
+        if (other.CompareTag("Coin"))
         {
             currentCoin++;
             other.gameObject.transform.GetChild(0).GetComponent<Animator>().SetTrigger("Collected");
             Destroy(other.gameObject, 1f);
         }
 
-        if (other.gameObject.tag == "VictoryPoint")
+        if (other.CompareTag("VictoryPoint"))
         {
-            FindObjectOfType<SceneManageMent>().LoadLevel();
+            FindObjectOfType<SceneManageMent>().LoadLevel("Level2");
         }
     }
 
@@ -145,10 +186,6 @@ public class player : MonoBehaviour
     {
         Debug.Log("Player Died");
         FindAnyObjectByType<GameManager>().isGameActive = false;
-        //CameraShake.instance.Shake(0.1f, 4f);
-        Destroy(this.gameObject);
+        Destroy(gameObject);
     }
 }
-
-
-
