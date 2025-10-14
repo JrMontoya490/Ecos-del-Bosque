@@ -16,7 +16,7 @@ GameObject:
   - component: {fileID: 2259050168063068408}
   m_Layer: 7
   m_Name: Player
-  m_TagString: Untagged
+  m_TagString: Player
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -173,10 +173,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 096222237b69a524cbb466cf9deaf612, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxHealth: 3
+  speed: 7
+  jumpForce: 15
+  CoinText: {fileID: 0}
   health: {fileID: 0}
-  jumpHeight: 15
-  moveSpeed: 7
+  monedas: 0
+  vidas: 5
   attackPoint: {fileID: 7111797505494708504}
   attackRadius: 1
   attackLayer:

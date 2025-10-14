@@ -1,98 +1,112 @@
-using System;
 using UnityEngine;
 using UnityEngine.UI;
+using System.Collections;
 using UnityEngine.SceneManagement;
 
-public class player : MonoBehaviour
+public class Player : MonoBehaviour
 {
-    public Text CoinText;
-    public int currentCoin = 0;
-    public int maxHealth = 3;
-    public Text health;
+    [Header("Movimiento")]
+    public float speed = 5f;
+    public float jumpForce = 10f;
     private Rigidbody2D rb;
-    private Animator animator;
-    private bool isGround = true;
-
-    public float jumpHeight = 10f;
-    public float moveSpeed = 10f;
-
+    private bool isJumping = false;
     private bool facingRight = true;
-    private float movement;
 
+    [Header("Animación")]
+    private Animator animator;
+
+    [Header("UI")]
+    public Text CoinText;
+    public Text health;
+
+    [Header("Estadísticas")]
+    public int monedas = 0;
+    public int vidas = 3;
+
+    [Header("Ataque")]
     public Transform attackPoint;
     public float attackRadius = 1f;
     public LayerMask attackLayer;
 
-    void Start()
+    private void Awake()
     {
-        // Evitar duplicados de jugador entre escenas
-        var players = FindObjectsOfType<player>();
+        var players = FindObjectsOfType<Player>();
         if (players.Length > 1)
         {
             Destroy(gameObject);
             return;
         }
 
-        // Hacer que el jugador no se destruya al cambiar de nivel
         DontDestroyOnLoad(gameObject);
-
-        rb = GetComponent<Rigidbody2D>();
-        animator = GetComponent<Animator>();
-
-        // Intentar reasignar los textos por nombre si no están puestos
-        if (CoinText == null)
-            CoinText = GameObject.Find("CoinText")?.GetComponent<Text>();
-
-        if (health == null)
-            health = GameObject.Find("HealthText")?.GetComponent<Text>();
-    }
-
-    void OnEnable()
-    {
-        // Escuchar cuando se cargue una nueva escena
         SceneManager.sceneLoaded += OnSceneLoaded;
     }
 
-    void OnDisable()
+    private void Start()
     {
-        SceneManager.sceneLoaded -= OnSceneLoaded;
+        InicializarPlayer();
     }
 
-    // Cuando se carga una nueva escena, colocar al jugador en el SpawnPoint
-    void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
-        GameObject spawn = GameObject.Find("SpawnPoint");
-        if (spawn != null)
-        {
-            transform.position = spawn.transform.position;
-        }
+        if (scene.name == "MainMenu") return;
 
-        // Reasignar los textos del nuevo Canvas
-        CoinText = GameObject.Find("CoinText")?.GetComponent<Text>();
-        health = GameObject.Find("HealthText")?.GetComponent<Text>();
+        InicializarPlayer();
+        MoverAlSpawn();
     }
 
-    void Update()
+    private void InicializarPlayer()
     {
-        if (maxHealth <= 0)
+        rb = GetComponent<Rigidbody2D>();
+        animator = GetComponent<Animator>();
+
+        // Solo buscar la UI si no estamos en el menú
+        if (SceneManager.GetActiveScene().name != "MainMenu")
         {
-            Die();
+            StartCoroutine(ReasignarUI());
+        }
+    }
+
+    private IEnumerator ReasignarUI()
+    {
+        for (int i = 0; i < 5; i++) // Intenta durante 5 frames
+        {
+            GameObject coinObj = GameObject.Find("CoinText");
+            GameObject healthObj = GameObject.Find("Health");
+
+            if (coinObj != null && healthObj != null)
+            {
+                CoinText = coinObj.GetComponent<Text>();
+                health = healthObj.GetComponent<Text>();
+                ActualizarUI();
+                Debug.Log("✅ UI encontrada y actualizada");
+                yield break;
+            }
+
+            yield return null;
         }
 
-        // Evitar errores si los textos aún no se han reasignado
-        if (CoinText != null)
-            CoinText.text = currentCoin.ToString();
+        Debug.LogWarning("⚠️ No se encontró CoinText o Health después de varios intentos.");
+    }
 
-        if (health != null)
-            health.text = maxHealth.ToString();
+    private void Update()
+    {
+        if (SceneManager.GetActiveScene().name == "MainMenu") return;
 
-        movement = Input.GetAxis("Horizontal");
-        transform.position += new Vector3(movement, 0f, 0f) * moveSpeed * Time.deltaTime;
+        if (GameManager.instance != null && !GameManager.instance.isGameActive)
+            return;
 
-        if (Input.GetKey(KeyCode.Space) && isGround)
+        float moveInput = Input.GetAxis("Horizontal");
+        rb.velocity = new Vector2(moveInput * speed, rb.velocity.y);
+
+        if (moveInput > 0 && !facingRight) Flip();
+        else if (moveInput < 0 && facingRight) Flip();
+
+        animator.SetFloat("Run", Mathf.Abs(moveInput) > 0.1f ? 1f : 0f);
+
+        if (Input.GetButtonDown("Jump") && !isJumping)
         {
-            Jump();
-            isGround = false;
+            rb.velocity = new Vector2(rb.velocity.x, jumpForce);
+            isJumping = true;
             animator.SetBool("Jump", true);
         }
 
@@ -100,92 +114,97 @@ public class player : MonoBehaviour
         {
             animator.SetTrigger("Attack");
         }
-
-        if (movement > 0f && !facingRight)
-        {
-            transform.eulerAngles = new Vector3(0f, 0f, 0f);
-            facingRight = true;
-        }
-        else if (movement < 0f && facingRight)
-        {
-            transform.eulerAngles = new Vector3(0f, -180f, 0f);
-            facingRight = false;
-        }
-
-        if (Mathf.Abs(movement) > 0.1f)
-        {
-            animator.SetFloat("Run", 1f);
-        }
-        else
-        {
-            animator.SetFloat("Run", 0f);
-        }
     }
 
-    void Jump()
+    private void Flip()
     {
-        Vector2 vel = rb.velocity;
-        vel.y = jumpHeight;
-        rb.velocity = vel;
+        facingRight = !facingRight;
+        Vector3 scaler = transform.localScale;
+        scaler.x *= -1;
+        transform.localScale = scaler;
     }
 
-    private void OnCollisionEnter2D(Collision2D other)
+    private void OnCollisionEnter2D(Collision2D collision)
     {
-        if (other.collider.CompareTag("Ground"))
+        if (collision.gameObject.CompareTag("Ground"))
         {
-            isGround = true;
+            isJumping = false;
             animator.SetBool("Jump", false);
+        }
+
+        if (collision.gameObject.CompareTag("Enemy"))
+        {
+            TakeDamage(1);
+        }
+    }
+
+    private void OnTriggerEnter2D(Collider2D collision)
+    {
+        if (collision.gameObject.CompareTag("Coin"))
+        {
+            monedas++;
+            Destroy(collision.gameObject);
+
+            if (monedas % 3 == 0) vidas++;
+            ActualizarUI();
+        }
+    }
+
+    void ActualizarUI()
+    {
+        Debug.Log("💰 Monedas: " + monedas + " | ❤️ Vidas: " + vidas);
+
+        if (CoinText != null) CoinText.text = "Monedas: " + monedas;
+        if (health != null) health.text = "Vidas: " + vidas;
+    }
+
+    public void TakeDamage(int damage)
+    {
+        vidas -= damage;
+        ActualizarUI();
+
+        if (vidas <= 0)
+        {
+            GameManager.instance.isRestarting = true;
+            GameManager.instance.ResetearProgreso();
+            SceneManager.LoadScene("Level1");
+            Destroy(gameObject);
         }
     }
 
     public void Attack()
     {
-        Collider2D collInfo = Physics2D.OverlapCircle(attackPoint.position, attackRadius, attackLayer);
-        if (collInfo)
+        Collider2D collinfo = Physics2D.OverlapCircle(attackPoint.position, attackRadius, attackLayer);
+        if (collinfo && collinfo.gameObject.CompareTag("Enemy"))
         {
-            PatrolEnemy enemy = collInfo.gameObject.GetComponent<PatrolEnemy>();
-            if (enemy != null)
-            {
-                enemy.TakeDamege(1);
-            }
+            collinfo.gameObject.GetComponent<PatrolEnemy>()?.TakeDamege(1);
         }
     }
 
-    void OnDrawGizmosSelected()
+    public void MoverAlSpawn()
+    {
+        GameObject spawn = GameObject.Find("SpawnPoint");
+        if (spawn != null)
+        {
+            transform.position = spawn.transform.position;
+        }
+        else
+        {
+            Debug.LogWarning("⚠️ No se encontró SpawnPoint en la escena.");
+        }
+    }
+
+    private void OnDrawGizmosSelected()
     {
         if (attackPoint != null)
         {
+            Gizmos.color = Color.red;
             Gizmos.DrawWireSphere(attackPoint.position, attackRadius);
         }
     }
 
-    public void TakeDamage(int damage)
+    private void OnDestroy()
     {
-        if (maxHealth <= 0)
-            return;
-
-        maxHealth -= damage;
-    }
-
-    void OnTriggerEnter2D(Collider2D other)
-    {
-        if (other.CompareTag("Coin"))
-        {
-            currentCoin++;
-            other.gameObject.transform.GetChild(0).GetComponent<Animator>().SetTrigger("Collected");
-            Destroy(other.gameObject, 1f);
-        }
-
-        if (other.CompareTag("VictoryPoint"))
-        {
-            FindObjectOfType<SceneManageMent>().LoadLevel("Level2");
-        }
-    }
-
-    void Die()
-    {
-        Debug.Log("Player Died");
-        FindAnyObjectByType<GameManager>().isGameActive = false;
-        Destroy(gameObject);
+        SceneManager.sceneLoaded -= OnSceneLoaded;
     }
 }
